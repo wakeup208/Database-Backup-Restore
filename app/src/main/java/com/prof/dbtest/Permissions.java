@@ -21,14 +21,15 @@ package com.prof.dbtest;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
-import android.support.v4.app.ActivityCompat;
 
 import static com.prof.dbtest.ui.MainActivity.REQUEST_CODE_PERMISSIONS;
+
+import androidx.core.app.ActivityCompat;
 
 public class Permissions {
 
     // Storage Permissions variables
-    private static String[] PERMISSIONS_STORAGE = {
+    private static final String[] PERMISSIONS_STORAGE = {
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
     };

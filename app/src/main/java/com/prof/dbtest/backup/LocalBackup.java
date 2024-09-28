@@ -17,13 +17,17 @@
 
 package com.prof.dbtest.backup;
 
+import android.content.Context;
 import android.os.Environment;
-import android.support.v7.app.AlertDialog;
 import android.text.InputType;
+import android.util.Log;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
+
+import com.prof.dbtest.AppContext;
 import com.prof.dbtest.db.DBHelper;
 import com.prof.dbtest.Permissions;
 import com.prof.dbtest.R;
@@ -39,12 +43,22 @@ public class LocalBackup {
         this.activity = activity;
     }
 
+    public static String getExternalFilesDirPath(Context context) {
+        File filesDir = context.getExternalFilesDir("");
+        if (filesDir == null) {
+            return Environment.getExternalStorageDirectory().getPath();//Just in case even this may not happens
+        }
+
+        return filesDir.getPath();
+    }
+
     //ask to the user a name for the backup and perform it. The backup will be saved to a custom folder.
     public void performBackup(final DBHelper db, final String outFileName) {
 
         Permissions.verifyStoragePermissions(activity);
 
-        File folder = new File(Environment.getExternalStorageDirectory() + File.separator + activity.getResources().getString(R.string.app_name));
+        //File folder = new File(Environment.getExternalStorageDirectory() + File.separator + activity.getResources().getString(R.string.app_name));
+        File folder = new File(getExternalFilesDirPath(AppContext.getContext()) + File.separator + activity.getResources().getString(R.string.app_name));
 
         boolean success = true;
         if (!folder.exists())
@@ -73,7 +87,9 @@ public class LocalBackup {
 
         Permissions.verifyStoragePermissions(activity);
 
-        File folder = new File(Environment.getExternalStorageDirectory() + File.separator + activity.getResources().getString(R.string.app_name));
+        File folder = new File(getExternalFilesDirPath(AppContext.getContext()) + File.separator + activity.getResources().getString(R.string.app_name));
+
+        Log.i("Thuc", "res : = " + getExternalFilesDirPath(AppContext.getContext()) + File.separator + activity.getResources().getString(R.string.app_name));
         if (folder.exists()) {
 
             final File[] files = folder.listFiles();

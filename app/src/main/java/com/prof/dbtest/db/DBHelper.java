@@ -17,21 +17,30 @@
 
 package com.prof.dbtest.db;
 
+import static com.prof.dbtest.backup.LocalBackup.getExternalFilesDirPath;
+
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.icu.text.SimpleDateFormat;
+import android.text.TextUtils;
+import android.util.Log;
 import android.widget.Toast;
 
+import com.prof.dbtest.AppContext;
 import com.prof.dbtest.data.Exam;
 import com.prof.dbtest.data.Student;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.Locale;
 
 
 public class DBHelper extends SQLiteOpenHelper {
@@ -60,8 +69,19 @@ public class DBHelper extends SQLiteOpenHelper {
     private static final String EX_ID = "id";
     private static final String EX_STUDENT = "student";
     private static final String EX_VAL = "evaluation";
+    private static final String DATE_TIME_FORMAT = "yyyyMMdd_HHmmss";
 
+
+    private static final String LOCAL_DIRECTORY = "/data/data" +
+            File.separator + "com.prof.dbtest" + File.separator;
+    private static final String LOCAL_DB_PATH = LOCAL_DIRECTORY + "databases" + File.separator;
     //Table Create Statement
+
+    private static final String MESSAGE_EXTERNAL_FOLDER
+            = getExternalFilesDirPath(AppContext.getContext()) + File.separator;
+    private static final String FOLDER_NAME_VERIFY_DB = "DBTest" + File.separator;
+    private static final String VERIFY_DATABASE_PATH =
+            MESSAGE_EXTERNAL_FOLDER + FOLDER_NAME_VERIFY_DB;
 
     //Students table
     private static final String CREATE_TABLE_STUDENTS = "CREATE TABLE " + TABLE_STUDENTS + " ( " +
@@ -248,6 +268,24 @@ public class DBHelper extends SQLiteOpenHelper {
 
 
     public void backup(String outFileName) {
+//        String date = null;
+//        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+//            date = new SimpleDateFormat(DATE_TIME_FORMAT,
+//                    Locale.getDefault()).format(new Date());
+//        }
+//
+//        String destPath = VERIFY_DATABASE_PATH + "Thuc.db" + File.separator;
+
+//        if (!createDirWithBeforeExistsDelete(outFileName)) {
+//            Log.v("Thuc", "backupLocalDatabaseToStorage() directory not created");
+//        }
+//
+//        try {
+//            Log.i("Thuc", "Backkkkkkkkk ");
+//            dirCopy(LOCAL_DB_PATH, outFileName);
+//        } catch (Exception e) {
+//
+//        }
 
         //database path
         final String inFileName = mContext.getDatabasePath(DATABASE_NAME).toString();
@@ -271,6 +309,7 @@ public class DBHelper extends SQLiteOpenHelper {
             output.flush();
             output.close();
             fis.close();
+            Log.i("Thuc", "OKKKKKKKKKKKKKKKKK " + inFileName + " " + outFileName);
 
             Toast.makeText(mContext, "Backup Completed", Toast.LENGTH_SHORT).show();
 
@@ -280,12 +319,79 @@ public class DBHelper extends SQLiteOpenHelper {
         }
     }
 
-    public void importDB(String inFileName) {
+    public static boolean createDirWithBeforeExistsDelete(String path) {
+        File directory = deleteDirectory(path);
+        return directory.mkdirs();
+    }
 
+    public static File deleteDirectory(String filePath) {
+        File directory = new File(filePath);
+        if (directory.exists()) {
+            File[] dirArray = directory.listFiles();
+            if (dirArray != null) {
+                for (File file : dirArray) {
+                    if (!file.delete()) {
+                        Log.v("Thuc", "file.delete() false file = " + file.toString());
+                    }
+                }
+            }
+            if (!directory.delete()) {
+                Log.v("Thuc", "directory.delete() false directory = " + directory.toString());
+            }
+        }
+        return directory;
+    }
+
+    public static void dirCopy(String inputPath, String outputPath) {
+        if (TextUtils.isEmpty(inputPath) || TextUtils.isEmpty(outputPath)) {
+            Log.e("Thuc", "INVALID! input : " + inputPath + " output : " + outputPath);
+            return;
+        }
+
+        File sourcePath = new File(inputPath);
+        if (!sourcePath.isDirectory()) {
+            Log.e("Thuc", inputPath + " is not directory");
+            return;
+        }
+
+        File[] listFiles = sourcePath.listFiles();
+        if (listFiles == null || listFiles.length == 0) {
+            Log.e("Thuc", inputPath + " is null or has no file");
+            return;
+        }
+
+        Log.d("Thuc", "Start copy file from " + inputPath + " to " + outputPath);
+        for (File file : listFiles) {
+            File dir = new File(outputPath);
+            if (!dir.exists()) {
+                if (!dir.mkdirs()) {
+                    Log.i("Thuc", "mkdir is failed");
+                    continue;
+                }
+            }
+
+            try (InputStream in = new FileInputStream(file.getAbsolutePath());
+                 OutputStream out = new FileOutputStream(outputPath + file.getName())) {
+                byte[] buffer = new byte[1024];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                }
+                out.flush();
+                Log.i("Thuc", "OKKKKKKKKKKKKKKKKK " + inputPath + " " + outputPath);
+
+            } catch (Exception e) {
+                Log.i("Thuc", "Xit : " + e.getMessage());
+
+            }
+        }
+    }
+
+    public void importDB(String inFileName) {
+        Log.i("Thuc", "InFile = " + inFileName);
         final String outFileName = mContext.getDatabasePath(DATABASE_NAME).toString();
 
         try {
-
             File dbFile = new File(inFileName);
             FileInputStream fis = new FileInputStream(dbFile);
 

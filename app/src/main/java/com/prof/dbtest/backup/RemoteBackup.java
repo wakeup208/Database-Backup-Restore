@@ -26,6 +26,8 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn;
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
 import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.android.gms.common.Scopes;
+import com.google.android.gms.common.api.Scope;
 import com.google.android.gms.drive.CreateFileActivityOptions;
 import com.google.android.gms.drive.Drive;
 import com.google.android.gms.drive.DriveClient;
@@ -85,17 +87,17 @@ public class RemoteBackup {
     }
 
     private void signIn() {
-        Log.i(TAG, "Start sign in");
+        Log.i("Thuc", "Start sign in");
         GoogleSignInClient GoogleSignInClient = buildGoogleSignInClient();
         activity.startActivityForResult(GoogleSignInClient.getSignInIntent(), REQUEST_CODE_SIGN_IN);
     }
 
     private GoogleSignInClient buildGoogleSignInClient() {
-        GoogleSignInOptions signInOptions =
-                new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                        .requestScopes(Drive.SCOPE_FILE)
-                        .build();
-        return GoogleSignIn.getClient(activity, signInOptions);
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestScopes(new Scope(Scopes.DRIVE_FILE), new Scope(Scopes.DRIVE_APPFOLDER)) // Add Drive scopes
+                .build();
+        return GoogleSignIn.getClient(activity, gso);
     }
 
 
@@ -105,7 +107,7 @@ public class RemoteBackup {
                 .continueWithTask(
                         task -> createFileIntentSender(task.getResult()))
                 .addOnFailureListener(
-                        e -> Log.w(TAG, "Failed to create new contents.", e));
+                        e -> Log.w("Thuc", "Failed to create new contents.", e));
     }
 
     private Task<Void> createFileIntentSender(DriveContents driveContents) {
@@ -154,7 +156,7 @@ public class RemoteBackup {
                 .addOnSuccessListener(activity,
                         driveId -> retrieveContents(driveId.asDriveFile()))
                 .addOnFailureListener(activity, e -> {
-                    Log.e(TAG, "No file selected", e);
+                    Log.e("Thuc", "No file selected", e);
                 });
     }
 
@@ -196,7 +198,7 @@ public class RemoteBackup {
 
                 })
                 .addOnFailureListener(e -> {
-                    Log.e(TAG, "Unable to read contents", e);
+                    Log.e("Thuc", "Unable to read contents", e);
                     Toast.makeText(activity, "Error on import", Toast.LENGTH_SHORT).show();
                 });
     }

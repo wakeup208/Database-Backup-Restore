@@ -17,26 +17,46 @@
 
 package com.prof.dbtest.ui;
 
+import android.Manifest;
+import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentSender;
+import android.content.pm.PackageManager;
 import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
 import android.os.Environment;
-import android.support.design.widget.FloatingActionButton;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AlertDialog;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.webkit.MimeTypeMap;
 import android.widget.Button;
 import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.widget.Toolbar;
+// Import the androidx Toolbar
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
+import com.google.android.gms.common.api.internal.ConnectionCallbacks;
+import com.google.android.gms.common.api.internal.OnConnectionFailedListener;
+import com.google.android.gms.drive.Drive;
+import com.google.android.gms.drive.DriveApi;
+import com.google.android.gms.drive.DriveContents;
+import com.google.android.gms.drive.DriveFile;
+import com.google.android.gms.drive.DriveFolder;
 import com.google.android.gms.drive.DriveId;
+import com.google.android.gms.drive.MetadataChangeSet;
 import com.google.android.gms.drive.OpenFileActivityOptions;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.prof.dbtest.AppContext;
 import com.prof.dbtest.db.DBHelper;
 import com.prof.dbtest.data.Exam;
 import com.prof.dbtest.data.Student;
@@ -44,14 +64,25 @@ import com.prof.dbtest.R;
 import com.prof.dbtest.backup.LocalBackup;
 import com.prof.dbtest.backup.RemoteBackup;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 
+import static com.prof.dbtest.backup.LocalBackup.getExternalFilesDirPath;
 import static com.prof.dbtest.db.DBHelper.getDatabaseVersion;
 
-public class MainActivity extends AppCompatActivity {
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+public class MainActivity extends AppCompatActivity implements ConnectionCallbacks, OnConnectionFailedListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
 
     private static final String TAG = "Google Drive Activity";
 
@@ -59,6 +90,14 @@ public class MainActivity extends AppCompatActivity {
     public static final int REQUEST_CODE_OPENING = 1;
     public static final int REQUEST_CODE_CREATION = 2;
     public static final int REQUEST_CODE_PERMISSIONS = 2;
+
+    private static final int REQUEST_CODE_RESOLUTION = 3;
+    public static DriveFile mfile;
+    private static GoogleApiClient mGoogleApiClient;
+    private static final String DATABASE_PATH = "/data/user/0/" + "com.prof.dbtest" + "/databases/" + "studentsManager";
+    private static final File DATA_DIRECTORY_DATABASE =
+            new File(getExternalFilesDirPath(AppContext.getContext()) + "/data/" + "com.prof.dbtest" + "/databases/" + "studentsManager");
+    private static final String MIME_TYPE = "application/x-sqlite-3";
 
     //variable for decide if i need to do a backup or a restore.
     //True stands for backup, False for restore
@@ -68,23 +107,162 @@ public class MainActivity extends AppCompatActivity {
 
     private RemoteBackup remoteBackup;
     private LocalBackup localBackup;
+    private Context mContext;
 
+    String[] permissions = {
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         activity = this;
-
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         Toolbar toolbar = findViewById(R.id.stoolbar);
         setSupportActionBar(toolbar);
 
-        remoteBackup = new RemoteBackup(this);
-        localBackup = new LocalBackup(this);
+        Log.i("Thuc","onCrate = " + getExternalFilesDirPath(AppContext.getContext()));
+        ActivityCompat.requestPermissions(this, permissions, 1234);
 
-        final DBHelper db = new DBHelper(getApplicationContext());
-        setupUI(db);
-        db.closeDB();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mGoogleApiClient == null) {
+            mGoogleApiClient = new GoogleApiClient.Builder(this)
+                    .addApi(Drive.API).addScope(Drive.SCOPE_FILE).addConnectionCallbacks(this).addOnConnectionFailedListener(this).build();
+        }
+        mGoogleApiClient.connect();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (mGoogleApiClient.isConnected()) {
+            mGoogleApiClient.disconnect();
+        }
+    }
+
+    public void saveFileToDrive() {
+        // Start by creating a new contents, and setting a callback.
+        Log.i(TAG, "Creating new contents.");
+        Drive.DriveApi.newDriveContents(mGoogleApiClient).setResultCallback(new ResultCallback<DriveApi.DriveContentsResult>() {
+            @Override
+            public void onResult(@NonNull DriveApi.DriveContentsResult result) {
+                if (!result.getStatus().isSuccess()) {
+                    return;
+                }
+
+                String mimeType = MimeTypeMap.getSingleton().getExtensionFromMimeType(MIME_TYPE);
+                MetadataChangeSet changeSet = new MetadataChangeSet.Builder()
+                        .setTitle("studentsManager") // Google Drive File name
+                        .setMimeType(mimeType)
+                        .setStarred(true).build();
+                // create a file on root folder
+                Drive.DriveApi.getRootFolder(mGoogleApiClient)
+                        .createFile(mGoogleApiClient, changeSet, result.getDriveContents()).setResultCallback((ResultCallback<? super DriveFolder.DriveFileResult>) backupFileCallback);
+
+            }
+        });
+    }
+
+    public static void doGDriveBackup() {
+        Drive.DriveApi.newDriveContents(mGoogleApiClient).setResultCallback(backupContentsCallback);
+
+    }
+
+    static final private ResultCallback<DriveApi.DriveContentsResult> backupContentsCallback = new
+            ResultCallback<DriveApi.DriveContentsResult>() {
+                @Override
+                public void onResult(DriveApi.DriveContentsResult result) {
+                    if (!result.getStatus().isSuccess()) {
+                        return;
+                    }
+                    String mimeType = MimeTypeMap.getSingleton().getExtensionFromMimeType(MIME_TYPE);
+                    MetadataChangeSet changeSet = new MetadataChangeSet.Builder()
+                            .setTitle("studentsManager") // Google Drive File name
+                            .setMimeType(mimeType)
+                            .setStarred(true).build();
+                    // create a file on root folder
+                    Drive.DriveApi.getRootFolder(mGoogleApiClient)
+                            .createFile(mGoogleApiClient, changeSet, result.getDriveContents())
+                            .setResultCallback(backupFileCallback);
+                }
+            };
+
+    static final private ResultCallback<DriveFolder.DriveFileResult> backupFileCallback = new
+            ResultCallback<DriveFolder.DriveFileResult>() {
+                @Override
+                public void onResult(DriveFolder.DriveFileResult result) {
+                    if (!result.getStatus().isSuccess()) {
+                        return;
+                    }
+                    mfile = result.getDriveFile();
+                    mfile.open(mGoogleApiClient, DriveFile.MODE_WRITE_ONLY, new DriveFile.DownloadProgressListener() {
+                        @Override
+                        public void onProgress(long bytesDownloaded, long bytesExpected) {
+                        }
+                    }).setResultCallback(backupContentsOpenedCallback);
+                }
+            };
+
+    static final private ResultCallback<DriveApi.DriveContentsResult> backupContentsOpenedCallback = new
+            ResultCallback<DriveApi.DriveContentsResult>() {
+                @Override
+                public void onResult(DriveApi.DriveContentsResult result) {
+                    if (!result.getStatus().isSuccess()) {
+                        return;
+                    }
+//            DialogFragment_Sync.setProgressText("Backing up..");
+                    DriveContents contents = result.getDriveContents();
+                    BufferedOutputStream bos = new BufferedOutputStream(contents.getOutputStream());
+                    byte[] buffer = new byte[1024];
+                    int n;
+
+                    try {
+                        FileInputStream is = new FileInputStream(DATA_DIRECTORY_DATABASE);
+                        BufferedInputStream bis = new BufferedInputStream(is);
+
+                        while ((n = bis.read(buffer)) > 0) {
+                            bos.write(buffer, 0, n);
+//                    DialogFragment_Sync.setProgressText("Backing up...");
+                        }
+                        bos.close();
+                    } catch (FileNotFoundException e) {
+                        e.printStackTrace();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    contents.commit(mGoogleApiClient, null).setResultCallback(new ResultCallback<Status>() {
+                        @Override
+                        public void onResult(Status status) {
+//                    DialogFragment_Sync.setProgressText("Backup completed!");
+//                    mToast(act.getResources().getString(R.string.backupComplete));
+//                    DialogFragment_Sync.dismissDialog();
+                        }
+                    });
+                }
+            };
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 1234) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permissions granted, proceed with writing to shared storage
+                remoteBackup = new RemoteBackup(this);
+                localBackup = new LocalBackup(this);
+
+                final DBHelper db = new DBHelper(AppContext.getContext());
+                setupUI(db);
+                db.closeDB();
+            } else {
+                // Permissions denied, handle accordingly
+            }
+        }
     }
 
     public void setupUI(DBHelper db) {
@@ -261,6 +439,12 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+    private static final String MESSAGE_EXTERNAL_FOLDER
+            = getExternalFilesDirPath(AppContext.getContext()) + File.separator;
+    private static final String FOLDER_NAME_VERIFY_DB = "DBTest" + File.separator;
+    private static final String VERIFY_DATABASE_PATH =
+            MESSAGE_EXTERNAL_FOLDER + FOLDER_NAME_VERIFY_DB;
+
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
 
@@ -269,7 +453,7 @@ public class MainActivity extends AppCompatActivity {
 
         switch (id) {
             case R.id.action_backup:
-                String outFileName = Environment.getExternalStorageDirectory() + File.separator + getResources().getString(R.string.app_name) + File.separator;
+                String outFileName = VERIFY_DATABASE_PATH; //Environment.getExternalStorageDirectory() + File.separator + getResources().getString(R.string.app_name) + File.separator;
                 localBackup.performBackup(db, outFileName);
                 break;
             case R.id.action_import:
@@ -277,7 +461,8 @@ public class MainActivity extends AppCompatActivity {
                 break;
             case R.id.action_backup_Drive:
                 isBackup = true;
-                remoteBackup.connectToDrive(isBackup);
+                //remoteBackup.connectToDrive(isBackup);
+                saveFileToDrive();
                 break;
             case R.id.action_import_Drive:
                 isBackup = false;
@@ -299,10 +484,18 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onActivityResult(final int requestCode, final int resultCode, final Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        Log.i("Thuc", "Sign in request code" + resultCode);
+
+
+        if (resultCode == Activity.RESULT_OK) {
+            saveFileToDrive();
+        }
+
         switch (requestCode) {
 
             case REQUEST_CODE_SIGN_IN:
-                Log.i(TAG, "Sign in request code");
+                Log.i("Thuc", "Sign in request code" + resultCode);
                 // Called after user is signed in.
                 if (resultCode == RESULT_OK) {
                     remoteBackup.connectToDrive(isBackup);
@@ -312,7 +505,7 @@ public class MainActivity extends AppCompatActivity {
             case REQUEST_CODE_CREATION:
                 // Called after a file is saved to Drive.
                 if (resultCode == RESULT_OK) {
-                    Log.i(TAG, "Backup successfully saved.");
+                    Log.i("Thuc", "Backup successfully saved.");
                     Toast.makeText(this, "Backup successufly loaded!", Toast.LENGTH_SHORT).show();
                 }
                 break;
@@ -356,6 +549,37 @@ public class MainActivity extends AppCompatActivity {
 
                 });
         builderChoose.show();
+    }
+
+    @Override
+    public void onConnected(@Nullable Bundle bundle) {
+        //saveFileToDrive();
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+
+    }
+
+    @Override
+    public void onConnectionFailed(@NonNull ConnectionResult result) {
+        Log.i(TAG, "GoogleApiClient connection failed: " + result.toString());
+        if (!result.hasResolution()) {
+            // show the localized error dialog.
+            GoogleApiAvailability.getInstance().getErrorDialog(this, result.getErrorCode(), 0).show();
+            return;
+        }
+        try {
+            result.startResolutionForResult(this, REQUEST_CODE_RESOLUTION);
+        } catch (IntentSender.SendIntentException e) {
+            Log.e(TAG, "Exception while starting resolution activity", e);
+        }
+
+    }
+
+    @Override
+    public void onPointerCaptureChanged(boolean hasCapture) {
+        super.onPointerCaptureChanged(hasCapture);
     }
 }
 
